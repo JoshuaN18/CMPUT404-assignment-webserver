@@ -1,5 +1,5 @@
 #  coding: utf-8 
-import socketserver
+import socketserver, os
 
 # Copyright 2013 Abram Hindle, Eddie Antonio Santos
 # 
@@ -28,11 +28,93 @@ import socketserver
 
 
 class MyWebServer(socketserver.BaseRequestHandler):
-    
+
     def handle(self):
-        self.data = self.request.recv(1024).strip()
-        print ("Got a request of: %s\n" % self.data)
-        self.request.sendall(bytearray("OK",'utf-8'))
+        self.data = str(self.request.recv(1024).strip()).split(" ")
+        self.file_type = "html"
+        path = self.data[1]     # Is the path
+
+        if self.data[0] == "b'GET":
+            # Checks if it GET is called
+            self.check_path(path)
+        else:
+            self.respond_405()
+
+        #self.request.sendall(bytearray("OK",'utf-8'))
+
+
+    def check_path(self, path):
+        # Add the www to path
+        www_path = "www" + path
+        
+        if ".." in www_path:
+            # Check for .. in path
+            self.error_404()
+
+        if os.path.exists(www_path):
+            # Check if path exists
+
+            if os.path.isfile(www_path):
+                # If the path is a file
+                self.file_type = www_path.split(".")[-1]
+                self.initiate_200(www_path)
+                return
+
+            if www_path[-1] == '/':
+                # If path has / at the end include index.html
+                www_path = "www" + path + "index.html"
+                self.initiate_200(www_path)
+                return
+
+            else:
+                # If path does not have / then redirect 301
+                self.redirect_301(www_path)
+                return
+        else:
+            # If path does not exist
+            self.error_404()
+
+
+    def initiate_200(self, www_path):
+        # Code 200
+        file_content = self.open_file(www_path)
+        response = "HTTP/1.1 200 OK\r\n"
+        content_type = "Content-Type: text/" + self.file_type + "\r\n"
+        self.request.sendall(bytearray(response,'utf-8'))
+        self.request.sendall(bytearray(content_type,'utf-8'))
+        self.request.sendall(bytearray(("\r\n" + file_content + "\r\n"),'utf-8'))
+
+
+    def redirect_301(self, www_path):
+        # Code 301
+        www_path = www_path + "/index.html"
+        file_content = self.open_file(www_path)
+        response = "HTTP/1.1 301 Moved Permanently\r\n"
+        content_type = "Content-Type: text/" + self.file_type + "\r\n"
+        self.request.sendall(bytearray(response,'utf-8'))
+        self.request.sendall(bytearray(content_type,'utf-8'))
+        self.request.sendall(bytearray(("\r\n" + file_content + "\r\n"),'utf-8'))
+
+
+    def open_file(self, www_path):
+        # Open the file
+        f = open(www_path)
+        file_content = f.read()
+        f.close()
+        return file_content
+
+
+    def respond_405(self):
+        # Code 405
+        response = "HTTP/1.1 405 Method Not Allowed\r\n"
+        self.request.sendall(bytearray(response, 'utf-8'))
+
+
+    def error_404(self):
+        # Code 404
+        response = "HTTP/1.1 404 Not Found\r\n"
+        self.request.sendall(bytearray(response, 'utf-8'))
+
 
 if __name__ == "__main__":
     HOST, PORT = "localhost", 8080
